@@ -17,7 +17,7 @@ This python package contains a 3D U-Net algorithm (a type of deep learning convo
     cd /path/to/unet_brats/
     pip install .
     ```
-Alternatively, install directly from the git repository like:
+    Alternatively, install directly from the git repository like:
 
     ```bash
     pip install git+<URL>
