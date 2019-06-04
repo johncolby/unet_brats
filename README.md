@@ -31,9 +31,9 @@ Example Jupyter notebooks for training and testing/inference are included in the
 
 This project aims to create a good implementation of a simple "vanilla" U-Net, which may be used as a basic foundation for more complex analyses. Nevertheless, despite the focus on simplicity, it achieves competitive performance out-of-the-box, for example achieving top 10 results in whole tumor segmentation at the time of this writing. From the [BraTS 2018 Leaderboard](https://www.cbica.upenn.edu/BraTS18/lboardValidation.html):
 
-| Team         | Dice_ET | Dice_WT | Dice_TC |
-| ---          | ---     | ---     | ---     |
-| Dep_Rad_UCSF | 0.78829 | 0.90918 | 0.84132 |
+| Team          | Dice_ET | Dice_WT | Dice_TC |
+| ---           | ---     | ---     | ---     |
+| Deep_Rad_UCSF | 0.78829 | 0.90918 | 0.84132 |
 
 ## Example output
 
