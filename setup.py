@@ -16,5 +16,7 @@ setup(
                       'numpy',
                       'transforms3d',
                       'tqdm',
-                      'rpy2'],
+                      'rpy2',
+                      'ipykernel',
+                      'ipywidgets'],
 )
