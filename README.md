@@ -1,6 +1,6 @@
 # README
 
-This python package contains a 3D U-Net algorithm (a type of deep learning convolutional neural network based on [Ronneberger et al., 2015](https://arxiv.org/abs/1505.04597)) for the segmentation of voxelwise medical imaging data. It is geared toward the [BraTS 2018](https://www.med.upenn.edu/sbia/brats2018.html) glioma brain tumor dataset, although the underlying network is broadly applicable to other voxelwise multi input channel and multi output class applications. It is implemented in the `mxnet` deep learning framework.
+This python package contains a 3D U-Net algorithm (a type of deep learning convolutional neural network based on [Ronneberger et al., 2015](https://arxiv.org/abs/1505.04597)) for the segmentation of voxelwise medical imaging data. It is geared toward the [BraTS 2018](https://www.med.upenn.edu/sbia/brats2018.html) glioma brain tumor dataset, although the underlying network is broadly applicable to other voxelwise multi input channel and multi output class applications. It is implemented in the `mxnet` deep learning framework, using code adapted from the [The Straight Dope](https://gluon.mxnet.io/chapter14_generative-adversarial-networks/pixel2pixel.html) book.
 
 ## Install
 
