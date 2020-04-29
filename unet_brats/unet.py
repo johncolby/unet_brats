@@ -318,6 +318,36 @@ def brats_transform(img, means, stds):
     stds  = stds.reshape(-1,1,1,1)
     return (img - means) / stds
 
+def brats_normalize(img):
+    means_brain = [img[i,][img[i,]!=0].mean() for i in range(len(img))]
+    stds_brain  = [img[i,][img[i,]!=0].std() for i in range(len(img))]
+
+    means_brain = np.array(means_brain).reshape(-1,1,1,1)
+    stds_brain  = np.array(stds_brain).reshape(-1,1,1,1)
+
+    return (img - means_brain) / stds_brain
+
+def nii_to_tensor(path, crop_size=[240, 240, 160]):
+    img = nib.load(path)
+    nii_hdr = img.header
+    img = img.get_fdata()
+    img = img.transpose((3, 0, 1, 2))
+    img = np.flip(img, 2)  # Correct AP orientation
+    img = img[0:4]
+    img = brats_normalize(img)
+    # Pad if smaller than crop_size
+    if any(np.array(img.shape[1:]) < crop_size):
+        img, _ = img_pad(img, img, crop_size)
+    return img, nii_hdr
+
+def tensor_to_nii(img, hdr, output_dims=[240, 240, 155]):
+    img = img_unpad(img, output_dims)
+    img = np.flip(img, 1)  # Flip AP orientation back to original BraTS convention
+    img[img == 3] = 4  # Convert tissue class labels back to original BraTS convention
+    img = img.astype(np.int16)
+    img_nii = nib.Nifti1Image(img, None, header=hdr)
+    return img_nii
+
 ################################################################################
 # U-Net
 
