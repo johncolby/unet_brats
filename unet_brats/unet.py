@@ -16,6 +16,7 @@ from gluoncv.data.segbase import SegmentationDataset
 
 from scipy.ndimage import affine_transform
 from math import pi
+from sklearn.model_selection import KFold
 from transforms3d import affines, euler
 
 ################################################################################
@@ -35,9 +36,8 @@ class MRISegDataset(SegmentationDataset):
 
         # Get input file path lists
         if split == 'train':
-            #import pdb; pdb.set_trace()
             self._dataset_root = os.path.join(root, 'training')
-            self.sub_dirs = glob.glob(self._dataset_root + '/*/*/')
+            self.sub_dirs = glob.glob(self._dataset_root + '/*/')
             if fold_inds is not None:
                 mask = np.ones(len(self.sub_dirs), np.bool)
                 mask[fold_inds] = 0
@@ -47,7 +47,7 @@ class MRISegDataset(SegmentationDataset):
                 if self.stds  is not None: self.stds  = self.stds[ikeep]
         elif split == 'val':
             self._dataset_root = os.path.join(root, 'training')
-            self.sub_dirs = glob.glob(self._dataset_root + '/*/*/')
+            self.sub_dirs = glob.glob(self._dataset_root + '/*/')
             if fold_inds is not None:
                 fold_dirs = np.array(self.sub_dirs)[fold_inds]
                 self.sub_dirs = fold_dirs
@@ -60,27 +60,23 @@ class MRISegDataset(SegmentationDataset):
             raise RuntimeError('Unknown dataset split: {}'.format(split))
 
     def __getitem__(self, idx):
-        #import pdb; pdb.set_trace()
         _sub_name = os.path.basename(os.path.dirname(self.sub_dirs[idx]))
 
         # Load multichannel input data
-        channels = ['flair', 't1', 't1ce', 't2']
+        channels = ['T1pre', 'T1post']
         img_paths = [os.path.join(self.sub_dirs[idx], _sub_name + '_' + channel + '.nii.gz') for channel in channels]
         img = []
         for img_path in img_paths:
             img.append(nib.load(img_path).get_fdata())
         img = np.array(img)
-        img = np.flip(img, 2) # Correct AP orientation
-        
+        dims = np.array(img.shape[1:])
         # Load segmentation label map
         target = None
         if self.split is not 'test':
             target = nib.load(os.path.join(self.sub_dirs[idx], _sub_name + '_seg.nii.gz')).get_fdata()
-            target[target==4] = 3 # Need to have consecutive integers [0, n_classes) for training
         else:
             target = np.zeros_like(img[0,:]) # dummy segmentation
         target = np.expand_dims(target, axis=0)
-        target = np.flip(target, 2) # Correct AP orientation
 
         # Data augmentation
         if self.mode == 'train':
@@ -145,74 +141,24 @@ class MRISegDataset(SegmentationDataset):
         """Category names."""
         return ('background', 'necrotic', 'edema', 'enhancing')
 
-class MRISegDatasetRec(MRISegDataset):
-    """Dataset class with more efficient recordIO uncompressed binary storage"""
-    def __init__(self, dims, **kwargs):
-        #import pdb; pdb.set_trace()
-        super(MRISegDatasetRec, self).__init__(**kwargs)
-        self._dims = dims
-        idx_file = os.path.splitext(self._dataset_root)[0] + '.idx'
-        rec_file = os.path.splitext(self._dataset_root)[0] + '.rec'
-        self._record = mx.recordio.MXIndexedRecordIO(idx_file, rec_file, 'r')
-
-    def __getitem__(self, idx):
-        #import pdb; pdb.set_trace()
-        record = self._record.read_idx(self._record.keys[idx])
-        header, img_s = mx.recordio.unpack(record)
-        img = np.frombuffer(img_s).reshape(self._dims)
-        target = np.expand_dims(img[-1], axis=0)
-        target.setflags(write=1)
-        target[target==4] = 3
-        img = img[:-1]
-        
-        # Data augmentation
-        if self.mode == 'train':
-            img, target = self._sync_transform(img, target)
-        elif self.mode == 'val':
-            img, target = self._val_sync_transform(img, target)
-        else:
-            raise RuntimeError('unknown mode for dataloader: {}'.format(self.mode))
-
-        # Routine img specific processing (normalize, etc.)
-        if self.transform is not None:
-            img = self.transform(img, self.means[idx], self.stds[idx])
-
-        return img, target
-
-class MRISegDataset4D(MRISegDataset):
-    """Dataset class with all inputs and GT seg combined into a single 4D NifTI"""
-    def __getitem__(self, idx):
-        #import pdb; pdb.set_trace()
-        _sub_name = os.path.basename(os.path.dirname(self.sub_dirs[idx]))
-
-        # Load multichannel input data
-        img_path = os.path.join(self.sub_dirs[idx], _sub_name + '_' + '4D' + '.nii.gz')
-        img_raw = nib.load(img_path).get_fdata()
-        img_raw = img_raw.transpose((3,0,1,2))
-        img_raw = np.flip(img_raw, 2) # Correct AP orientation
-        img = img_raw[0:4]
-        
-        # Load segmentation label map
-        if self.split is not 'test':
-            target = img_raw[4]
-            target[target==4] = 3 # Need to have consecutive integers [0, n_classes) for training
-        else:
-            target = np.zeros_like(img[0,:]) # dummy segmentation
-        target = np.expand_dims(target, axis=0)
-
-        # Data augmentation
-        if self.mode == 'train':
-            img, target = self._sync_transform(img, target)
-        elif self.mode == 'val':
-            img, target = self._val_sync_transform(img, target)
-        else:
-            raise RuntimeError('unknown mode for dataloader: {}'.format(self.mode))
-
-        # Routine img specific processing (normalize, etc.)
-        if self.transform is not None:
-            img = self.transform(img, self.means[idx], self.stds[idx])
-
-        return img, target
+class CVSampler(mx.gluon.data.sampler.Sampler):
+    def __init__(self, length, n_splits, i_fold, mode = 'train', shuffle = True, seed = 1):
+        self.n_splits = n_splits
+        self.seed = seed
+        self._length = length
+        self.folds = self.get_folds()
+        self._indices = self.folds[i_fold][mode]
+        self._shuffle = shuffle
+    def __iter__(self):
+        if self._shuffle:
+            np.random.shuffle(self._indices)
+        return iter(self._indices)
+    def __len__(self):
+        return self._length
+    def get_folds(self):
+        skf = KFold(n_splits = self.n_splits, shuffle = True, random_state = self.seed)
+        folds = [{'train': tr, 'test': te} for tr, te in skf.split(X = np.arange(self._length))]
+        return folds
 
 def img_pad(img, mask, pad_dims):
     """Pad input image vol to given voxel dims"""
@@ -251,14 +197,19 @@ def img_unpad(img, dims):
 def img_crop(img, mask, crop_size, lesion_frac=0.9):
     """Sample a random image subvol/patch from larger input vol"""
     # Pick the location for the patch centerpoint
-    if np.random.random() < lesion_frac:
-        good_inds = (mask.squeeze() != 0).nonzero() # sample all lesion voxels
+    good_inds = (mask.squeeze() != 0).nonzero()
+    if np.random.random() < lesion_frac and (len(good_inds[0]) > 0):
+        i_center = np.random.randint(len(good_inds[0]))
+        xmin = good_inds[0][i_center] - crop_size[0] // 2
+        ymin = good_inds[1][i_center] - crop_size[1] // 2
+        zmin = good_inds[2][i_center] - crop_size[2] // 2
     else:
-        good_inds = (img[0,] != 0).nonzero() # sample all brain voxels
-    i_center = np.random.randint(len(good_inds[0]))
-    xmin = good_inds[0][i_center] - crop_size[0] // 2
-    ymin = good_inds[1][i_center] - crop_size[1] // 2
-    zmin = good_inds[2][i_center] - crop_size[2] // 2
+        len_array = np.prod(img[0,].shape)
+        i_center = np.random.randint(len_array)
+        inds = np.unravel_index(i_center, img[0,].shape)
+        xmin = inds[0] - crop_size[0] // 2
+        ymin = inds[1] - crop_size[1] // 2
+        zmin = inds[2] - crop_size[2] // 2
 
     # Make sure centerpoint is not too small
     if xmin < 0: xmin = 0
@@ -421,13 +372,13 @@ def brats_validate(model, data_loader, crop_size, overlap, ctx):
     """Predict segs from val data, compare to ground truth val segs, and calculate val dice metrics"""
     # Setup metric dictionary
     metrics = init_brats_metrics()
-
-    # Get patch index iterator
-    dims = data_loader._dataset[0][1].shape[1:]
-    patch_iter = get_patch_iter(dims, crop_size, overlap)
     
     # Iterate over validation subjects
     for i, (data, label) in enumerate(data_loader):  
+
+        # Get patch index iterator
+        dims = data.shape[2:]
+        patch_iter = get_patch_iter(dims, crop_size, overlap)
 
         # Iterate over patches
         for inds in patch_iter:
@@ -537,9 +488,7 @@ def get_output_mask(model, data):
 def init_brats_metrics():
     """Initialize dict for BraTS Dice metrics"""
     metrics = {}
-    metrics['ET'] = {'labels': [3]}
-    metrics['TC'] = {'labels': [1, 3]}
-    metrics['WT'] = {'labels': [1, 2, 3]}
+    metrics['Mets'] = {'labels': [1]}
     for _, value in metrics.items():
         value.update({'tp':0, 'tot':0})
     return metrics
@@ -640,16 +589,11 @@ def start_logger(args):
 
     return logger, sw
 
-def log_epoch_hooks(epoch, train_loss, metrics, logger, sw):
+def log_epoch_hooks(epoch, train_loss, dsc, logger, sw):
     """Epoch logging"""
-    DSCs = np.array([v['DSC'] for k,v in metrics.items()])
-    DSC_avg = DSCs.mean()
-    logger.info('E %d | loss %.4f | ET %.4f | TC %.4f | WT %.4f | Avg %.4f'%((epoch, train_loss) + tuple(DSCs) + (DSC_avg, )))
-    sw.add_scalar(tag='Dice', value=('Val ET', DSCs[0]), global_step=epoch)
-    sw.add_scalar(tag='Dice', value=('Val TC', DSCs[1]), global_step=epoch)
-    sw.add_scalar(tag='Dice', value=('Val WT', DSCs[2]), global_step=epoch)
-    sw.add_scalar(tag='Dice', value=('Val Avg', DSCs.mean()), global_step=epoch)
-    return DSC_avg
+    logger.info('E %d | loss %.4f | DSC %.4f'%((epoch, train_loss, dsc)))
+    sw.add_scalar(tag='Dice', value=('Mets', dsc), global_step=epoch)
+    return
 
 class SoftDiceLoss(gluon.loss.Loss):
     """Soft Dice loss for segmentation"""
@@ -663,7 +607,7 @@ class SoftDiceLoss(gluon.loss.Loss):
         # import pdb; pdb.set_trace()
         pred = F.softmax(pred, self._axis)
 
-        label = F.one_hot(label, 4).transpose((0,4,1,2,3))
+        label = F.one_hot(label, 2).transpose((0,4,1,2,3))
 
         tp = pred * label
         tp = F.sum(tp, axis=(self._axis, self._batch_axis), exclude=True, keepdims=True)
@@ -672,6 +616,6 @@ class SoftDiceLoss(gluon.loss.Loss):
         tot = F.sum(tot, axis=(self._axis, self._batch_axis), exclude=True, keepdims=True)
 
         dsc = (2 * tp + self._smooth) / (tot + self._smooth + self._eps)
-        #dsc = F.slice_axis(dsc, axis=self._axis, begin=1, end=None) # omit background class?
+        dsc = F.slice_axis(dsc, axis=self._axis, begin=1, end=None) # omit background class?
 
         return - F.sum(dsc, axis=self._batch_axis, exclude=True)

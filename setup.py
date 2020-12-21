@@ -18,5 +18,7 @@ setup(
                       'tqdm',
                       'rpy2',
                       'ipykernel',
-                      'ipywidgets'],
+                      'ipywidgets',
+                      'sklearn',
+                      'pandas'],
 )

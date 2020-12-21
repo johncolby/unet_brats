@@ -1,6 +1,13 @@
 # README
 
-This python package contains a 3D U-Net algorithm (a type of deep learning convolutional neural network based on [Ronneberger et al., 2015](https://arxiv.org/abs/1505.04597)) for the segmentation of voxelwise medical imaging data. It is geared toward the [BraTS 2018](https://www.med.upenn.edu/sbia/brats2018.html) glioma brain tumor dataset, although the underlying network is broadly applicable to other voxelwise multi input channel and multi output class applications. It is implemented in the `mxnet` deep learning framework, using code adapted from the [The Straight Dope](https://gluon.mxnet.io/chapter14_generative-adversarial-networks/pixel2pixel.html) book.
+## Modifications for UCSF GK data
+
+- BraTS data are 4 channel; GK data are 2. Modifications were made to the data loaders, dice validation heuristics, etc..
+- Number of subjects.
+- Directory structure is slightly different. Different file names too.
+- Data normalization: BraTS data are identically 0 outside the brain, so can do `means_brain` and `stds_brain`. GK data are not.
+- Orientation: BraTS data are in a funny orientation template, which we had to keep for the competition predictions. For GK data, we can just predict in native space.
+- Volume dimensions: BraTS are all `[240, 240, 155]`. GK data vary. If I recall correctly, the matrix is always 256×256, but the number of slices vary, data were padded in the slice direction to match. If needed, can adjust the `pad_size_val` further to accommodate other data.
 
 ## Install
 
@@ -26,15 +33,3 @@ This python package contains a 3D U-Net algorithm (a type of deep learning convo
 ## Usage
 
 Example Jupyter notebooks for training and testing/inference are included in the [notebooks](notebooks) directory.
-
-## Performance
-
-This project aims to create a good implementation of a simple "vanilla" U-Net, which may be used as a basic foundation for more complex analyses. Nevertheless, despite the focus on simplicity, it achieves competitive performance out-of-the-box, for example achieving top 10 results in whole tumor segmentation at the time of this writing. From the [BraTS 2018 Leaderboard](https://www.cbica.upenn.edu/BraTS18/lboardValidation.html):
-
-| Team          | Dice_ET | Dice_WT | Dice_TC |
-| ---           | ---     | ---     | ---     |
-| Deep_Rad_UCSF | 0.78829 | 0.90918 | 0.84132 |
-
-## Example output
-
-![](https://user-images.githubusercontent.com/473295/58853174-d775b300-8688-11e9-9a33-6ee4444d3c20.png)
